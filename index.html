@@ -217,39 +217,41 @@
       border-top: 8px solid white;
     }
 
-    #theme-btn {
-      background: #334155; border: none; border-radius: 10px;
-      padding: 2px 8px; cursor: pointer; font-size: 12px;
-      color: #94a3b8; transition: all 0.2s; line-height: 16px;
-      display: inline-flex; align-items: center; justify-content: center;
+    #basemap-btn {
+      background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+      padding: 6px 10px; cursor: pointer; font-size: 12px;
+      color: #e2e8f0; transition: all 0.2s;
+      display: flex; align-items: center; gap: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
-    #theme-btn:hover { background: #475569; color: #e2e8f0; }
-    body.light #theme-btn { background: #e2e8f0; color: #475569; }
-    body.light #theme-btn:hover { background: #cbd5e1; }
+    #basemap-btn:hover { background: #334155; }
+    #basemap-btn .swatch {
+      width: 14px; height: 14px; border-radius: 3px;
+      border: 1px solid rgba(255,255,255,0.2);
+    }
 
-    /* Light mode overrides */
-    body.light { background: #f1f5f9; }
-    body.light #panel { background: #ffffff; color: #1e293b; border: 1px solid #e2e8f0; }
-    body.light #panel-header { background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-    body.light .stat-card { background: #f8fafc; border-color: #e2e8f0; }
-    body.light .stat-card .label { color: #64748b; }
-    body.light .stat-card .value { color: #1e293b; }
-    body.light .uptd-item { background: #f8fafc; border-color: #e2e8f0; }
-    body.light #file-drop { border-color: #cbd5e1; }
-    body.light #file-drop p { color: #64748b; }
-    body.light #legend { background: #ffffff; color: #1e293b; border: 1px solid #e2e8f0; }
-    body.light #legend h4 { color: #64748b; }
-    body.light #search-box { background: #ffffff; border: 1px solid #e2e8f0; }
-    body.light #search-input { color: #1e293b; }
-    body.light #search-input::placeholder { color: #94a3b8; }
-    body.light #search-dropdown { background: #ffffff; border-color: #e2e8f0; border-radius: 0 0 10px 10px; }
-    body.light .search-item { border-color: #f1f5f9; }
-    body.light .search-item:hover { background: #f8fafc; }
-    body.light .search-item .s-name { color: #1e293b; }
-    body.light .search-item .s-meta { color: #64748b; }
-    body.light .maplibregl-popup-content { background: #ffffff !important; color: #1e293b !important; }
-    body.light .maplibregl-popup-content b { color: #0284c7; }
-    body.light .maplibregl-popup-tip { border-top-color: #ffffff !important; }
+    #basemap-dropdown {
+      position: absolute; bottom: 52px; right: 12px; z-index: 20;
+      background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+      display: none; min-width: 160px; overflow: hidden;
+    }
+    #basemap-dropdown.open { display: block; }
+    .basemap-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; cursor: pointer; font-size: 12px;
+      color: #e2e8f0; transition: background 0.1s;
+    }
+    .basemap-item:hover { background: #334155; }
+    .basemap-item.active { background: #38bdf8; color: #0f172a; font-weight: 600; }
+    .basemap-item .swatch {
+      width: 18px; height: 18px; border-radius: 3px;
+      border: 1px solid rgba(255,255,255,0.15);
+      flex-shrink: 0;
+    }
+    .basemap-item .label { flex: 1; }
+    .basemap-item .check { font-size: 11px; opacity: 0; }
+    .basemap-item.active .check { opacity: 1; }
   </style>
 </head>
 <body>
@@ -282,7 +284,6 @@
   <div id="panel-header">
     <span class="icon">🛣️</span>
     <h1>Peta Jalan Provinsi Jabar</h1>
-    <button id="theme-btn" title="Toggle dark/light mode">🌙</button>
     <span class="badge" id="road-badge">0</span>
   </div>
   <div id="panel-body">
@@ -311,6 +312,41 @@
 <div id="legend" style="display:none;">
   <h4>Legend - UPTD</h4>
   <div id="legend-roads"></div>
+</div>
+
+<div id="basemap-gallery" style="position:absolute; bottom:24px; right:12px; z-index:10;">
+  <button id="basemap-btn" title="Pilih basemap">
+    <span class="swatch" id="basemap-swatch"></span>
+    <span id="basemap-label">Liberty</span>
+    <span style="font-size:9px; opacity:0.7;">▾</span>
+  </button>
+  <div id="basemap-dropdown">
+    <div class="basemap-item active" data-style="liberty" data-label="Liberty">
+      <span class="swatch" style="background: linear-gradient(135deg, #f5f5f0 50%, #c8c4b8 50%);"></span>
+      <span class="label">Liberty</span>
+      <span class="check">✓</span>
+    </div>
+    <div class="basemap-item" data-style="bright" data-label="Bright">
+      <span class="swatch" style="background: linear-gradient(135deg, #fafaf6 50%, #b3d4a8 50%);"></span>
+      <span class="label">Bright</span>
+      <span class="check">✓</span>
+    </div>
+    <div class="basemap-item" data-style="positron" data-label="Positron">
+      <span class="swatch" style="background: linear-gradient(135deg, #ffffff 50%, #e8e8e8 50%);"></span>
+      <span class="label">Positron</span>
+      <span class="check">✓</span>
+    </div>
+    <div class="basemap-item" data-style="dark" data-label="Dark">
+      <span class="swatch" style="background: linear-gradient(135deg, #1a1a2e 50%, #2d2d44 50%);"></span>
+      <span class="label">Dark</span>
+      <span class="check">✓</span>
+    </div>
+    <div class="basemap-item" data-style="fiord" data-label="Fiord">
+      <span class="swatch" style="background: linear-gradient(135deg, #2b3a4a 50%, #1e2a36 50%);"></span>
+      <span class="label">Fiord</span>
+      <span class="check">✓</span>
+    </div>
+  </div>
 </div>
 
 <script type="module">
@@ -948,43 +984,66 @@
     if (!e.target.closest("#search-box")) searchDropdown.style.display = "none";
   });
 
-  // ─── THEME TOGGLE ──────────────────────────────────────────
-  const MAP_STYLES = {
-    dark: "https://tiles.openfreemap.org/styles/liberty",
-    light: "https://tiles.openfreemap.org/styles/bright"
+  // ─── BASEMAP GALLERY ───────────────────────────────────────
+  const BASEMAP_URLS = {
+    liberty: "https://tiles.openfreemap.org/styles/liberty",
+    bright: "https://tiles.openfreemap.org/styles/bright",
+    positron: "https://tiles.openfreemap.org/styles/positron",
+    dark: "https://tiles.openfreemap.org/styles/dark",
+    fiord: "https://tiles.openfreemap.org/styles/fiord",
   };
 
-  let isSwitchingTheme = false;
+  let isSwitchingStyle = false;
 
-  function setTheme(theme) {
-    if (isSwitchingTheme) return;
-    isSwitchingTheme = true;
-    document.body.classList.toggle("light", theme === "light");
-    $("theme-btn").textContent = theme === "dark" ? "🌙" : "☀️";
+  function setBasemap(name) {
+    if (isSwitchingStyle || !BASEMAP_URLS[name]) return;
+    isSwitchingStyle = true;
+
+    // Update UI
+    $("basemap-label").textContent = name.charAt(0).toUpperCase() + name.slice(1);
+    document.querySelectorAll(".basemap-item").forEach(el => {
+      el.classList.toggle("active", el.dataset.style === name);
+    });
 
     const onStyleLoaded = () => {
       if (roadsGeoJSON && !map.getSource("roads")) {
         addRoadsLayer(true);
       }
-      isSwitchingTheme = false;
+      isSwitchingStyle = false;
     };
 
     map.once("style.load", onStyleLoaded);
-    map.setStyle(MAP_STYLES[theme]);
+    map.setStyle(BASEMAP_URLS[name]);
 
     setTimeout(() => {
-      if (isSwitchingTheme && roadsGeoJSON && !map.getSource("roads")) {
+      if (isSwitchingStyle && roadsGeoJSON && !map.getSource("roads")) {
         map.off("style.load", onStyleLoaded);
         addRoadsLayer(true);
-        isSwitchingTheme = false;
+        isSwitchingStyle = false;
       }
     }, 2000);
+
+    // Close dropdown after selection
+    $("basemap-dropdown").classList.remove("open");
   }
 
-  let currentTheme = "dark";
-  $("theme-btn").addEventListener("click", () => {
-    currentTheme = currentTheme === "dark" ? "light" : "dark";
-    setTheme(currentTheme);
+  // Dropdown toggle
+  $("basemap-btn").addEventListener("click", (e) => {
+    e.stopPropagation();
+    $("basemap-dropdown").classList.toggle("open");
+  });
+
+  // Basemap item clicks
+  $("basemap-dropdown").addEventListener("click", (e) => {
+    const item = e.target.closest(".basemap-item");
+    if (item) setBasemap(item.dataset.style);
+  });
+
+  // Close dropdown on outside click
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("#basemap-gallery")) {
+      $("basemap-dropdown").classList.remove("open");
+    }
   });
 
   // ─── INIT DONE ────────────────────────────────────────────
