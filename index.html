@@ -1154,7 +1154,7 @@
             [parseFloat(bbox[3]), parseFloat(bbox[0])],
             [parseFloat(bbox[2]), parseFloat(bbox[1])]
           );
-          if (b.isValid()) {
+          if (!b.isEmpty()) {
             map.fitBounds(b, { padding: 40, maxZoom: 16, duration: 800 });
           } else {
             map.flyTo({ center: [lng, lat], zoom: 14, duration: 800 });
@@ -1168,7 +1168,7 @@
           if (!geojson) return;
           renderHighlight(geojson);
           const b = geometryBounds(geojson.geometry);
-          if (b.isValid() && b.getWest() !== b.getEast() && b.getSouth() !== b.getNorth()) {
+          if (!b.isEmpty() && b.getWest() !== b.getEast() && b.getSouth() !== b.getNorth()) {
             map.fitBounds(b, { padding: 40, maxZoom: 16, duration: 600 });
           }
         });
