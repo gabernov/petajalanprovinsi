@@ -84,6 +84,11 @@
       font-size: 10px; font-weight: 600; margin-left: 4px;
     }
     .search-empty { padding: 14px; text-align: center; color: #64748b; font-size: 12px; }
+    .search-divider {
+      padding: 5px 14px; font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: #64748b; background: rgba(0,0,0,0.15);
+    }
     #search-dropdown::-webkit-scrollbar { width: 4px; }
     #search-dropdown::-webkit-scrollbar-track { background: transparent; }
     #search-dropdown::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
@@ -284,6 +289,7 @@
     body.light .search-item:hover { background: #f1f5f9; }
     body.light .search-item .s-name { color: #0f172a; }
     body.light .search-item .s-meta { color: #94a3b8; }
+    body.light .search-divider { background: rgba(0,0,0,0.04); color: #94a3b8; }
     body.light #legend { background: #ffffff; color: #1e293b; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
     body.light #legend h4 { color: #0f172a; }
     body.light #basemap-btn { background: #ffffff; color: #1e293b; border-color: #cbd5e1; }
@@ -914,15 +920,21 @@
   searchInput.addEventListener("focus", () => { $("search-box").classList.add("has-focus"); });
   searchInput.addEventListener("blur", () => { setTimeout(() => $("search-box").classList.remove("has-focus"), 150); });
 
+  let nomTimer = null, nomAbort = null;
+
   searchInput.addEventListener("input", (e) => {
-    const q = e.target.value.trim().toLowerCase();
+    const raw = e.target.value.trim();
+    const q = raw.toLowerCase();
     if (q.length < 2) { searchDropdown.style.display = "none"; return; }
-    if (!roadsGeoJSON) return;
+
+    // Cancel pending Nominatim
+    if (nomAbort) { nomAbort.abort(); nomAbort = null; }
+    if (nomTimer) { clearTimeout(nomTimer); nomTimer = null; }
 
     // Check if it's a coordinate input (lat, lng or lng, lat)
-    const coordMatch = q.match(/^-?\d+\.?\d*\s*[,\s]\s*-?\d+\.?\d*$/);
+    const coordMatch = raw.match(/^-?\d+\.?\d*\s*[,\s]\s*-?\d+\.?\d*$/);
     if (coordMatch) {
-      const parts = q.split(/[,\s]+/).map(Number);
+      const parts = raw.split(/[,\s]+/).map(Number);
       let lat, lng;
       if (Math.abs(parts[0]) <= 90 && Math.abs(parts[1]) <= 180) {
         lat = parts[0]; lng = parts[1];
@@ -941,35 +953,75 @@
       return;
     }
 
-    // Search roads by name or kode
-    const results = roadsGeoJSON.features.filter(f => {
-      const name = (f.properties.nama || "").toLowerCase();
-      const kode = (f.properties.kode_number || "").toLowerCase();
-      const code = (f.properties.kode || "").toLowerCase();
-      return name.includes(q) || kode.includes(q) || code.includes(q);
-    }).slice(0, 15);
+    // Search roads from loaded data
+    let roadHtml = "";
+    let roadResults = [];
+    if (roadsGeoJSON) {
+      roadResults = roadsGeoJSON.features.filter(f => {
+        const name = (f.properties.nama || "").toLowerCase();
+        const kode = (f.properties.kode_number || "").toLowerCase();
+        const code = (f.properties.kode || "").toLowerCase();
+        return name.includes(q) || kode.includes(q) || code.includes(q);
+      }).slice(0, 10);
 
-    if (results.length === 0) {
-      searchDropdown.innerHTML = `<div class="search-empty">Tidak ditemukan</div>`;
-      searchDropdown.style.display = "block";
-      return;
+      if (roadResults.length > 0) {
+        roadHtml = roadResults.map((f, i) => {
+          const p = f.properties;
+          const color = UPTD_COLORS[p.unit_kerja_kode] || UPTD_DEFAULT;
+          return `<div class="search-item" data-idx="${i}">
+            <div class="s-name">${p.nama || "Jalan"}
+              <span class="s-uptd" style="background:${color};color:#fff;">${p.unit_kerja_kode || "?"}</span>
+            </div>
+            <div class="s-meta">${p.kode_number || ""} &middot; ${p.panjang_km || "?"} km &middot; ${p.kode || ""}</div>
+          </div>`;
+        }).join("");
+      }
     }
 
-    searchDropdown.innerHTML = results.map((f, i) => {
-      const p = f.properties;
-      const color = UPTD_COLORS[p.unit_kerja_kode] || UPTD_DEFAULT;
-      return `<div class="search-item" data-idx="${i}">
-        <div class="s-name">${p.nama || "Jalan"}
-          <span class="s-uptd" style="background:${color};color:#fff;">${p.unit_kerja_kode || "?"}</span>
-        </div>
-        <div class="s-meta">${p.kode_number || ""} &middot; ${p.panjang_km || "?"} km &middot; ${p.kode || ""}</div>
-      </div>`;
-    }).join("");
+    // Show road results immediately, then fetch Nominatim
+    searchDropdown.innerHTML = roadHtml || `<div class="search-empty">Mencari...</div>`;
     searchDropdown.style.display = "block";
+    searchDropdown._results = roadResults;
+    searchDropdown._nomResults = null;
 
-    // Store results for click handling
-    searchDropdown._results = results;
+    // Debounced Nominatim lookup
+    nomTimer = setTimeout(async () => {
+      nomAbort = new AbortController();
+      try {
+        const resp = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(raw)}&format=json&limit=5&accept-language=id`,
+          { signal: nomAbort.signal, headers: { 'User-Agent': 'PetaJalanProvinsi/1.0' } }
+        );
+        const data = await resp.json();
+        if (!data || data.length === 0) {
+          if (!roadHtml) {
+            searchDropdown.innerHTML = `<div class="search-empty">Tidak ditemukan</div>`;
+          }
+          return;
+        }
+
+        let html = roadHtml;
+        if (roadHtml) html += `<div class="search-divider">📍 Places</div>`;
+        html += data.map((r, i) => `
+          <div class="search-item" data-nom="${i}">
+            <div class="s-name">📍 ${escHtml(r.display_name.split(",")[0])}</div>
+            <div class="s-meta">${escHtml(r.display_name.split(",").slice(1).join(",").trim())}</div>
+          </div>
+        `).join("");
+
+        searchDropdown.innerHTML = html;
+        searchDropdown._nomResults = data;
+      } catch (err) {
+        if (err.name !== "AbortError") console.warn("Nominatim:", err.message);
+      }
+    }, 400);
   });
+
+  function escHtml(s) {
+    const d = document.createElement("div");
+    d.textContent = s || "";
+    return d.innerHTML;
+  }
 
   searchDropdown.addEventListener("click", (e) => {
     const item = e.target.closest(".search-item");
@@ -980,6 +1032,20 @@
       const lat = parseFloat(item.dataset.lat);
       const lng = parseFloat(item.dataset.lng);
       placeCoordMarker(lng, lat);
+    } else if (item.dataset.nom !== undefined) {
+      // Nominatim result
+      const r = searchDropdown._nomResults[parseInt(item.dataset.nom)];
+      if (r) {
+        const lng = parseFloat(r.lon);
+        const lat = parseFloat(r.lat);
+        placeCoordMarker(lng, lat);
+        setTimeout(() => {
+          new maplibregl.Popup({ maxWidth: "320px" })
+            .setLngLat([lng, lat])
+            .setHTML(`<div><b>📍 ${escHtml(r.display_name.split(",")[0])}</b><br/><span style="color:#94a3b8;">${escHtml(r.display_name)}</span></div>`)
+            .addTo(map);
+        }, 1100);
+      }
     } else {
       const idx = parseInt(item.dataset.idx);
       const feature = searchDropdown._results[idx];
@@ -998,12 +1064,12 @@
           new maplibregl.Popup({ maxWidth: "320px" })
             .setLngLat(mid)
             .setHTML(`<div>
-              <b style="font-size:14px;">${p.nama || "Jalan"}</b><br/>
-              <span style="color:#94a3b8;">${p.kode_number || ""}</span><br/><br/>
-              <b>Kode:</b> ${p.kode || "N/A"}<br/>
-              <b>Panjang:</b> ${p.panjang_km || "N/A"} km<br/>
-              <b>UPTD:</b> <span style="color:${color};font-weight:700;">${p.unit_kerja_kode || "N/A"}</span><br/>
-              <b>Lokasi:</b> ${p.lokasi_kode || "N/A"}
+              <b style="font-size:14px;">${escHtml(p.nama || "Jalan")}</b><br/>
+              <span style="color:#94a3b8;">${escHtml(p.kode_number || "")}</span><br/><br/>
+              <b>Kode:</b> ${escHtml(p.kode || "N/A")}<br/>
+              <b>Panjang:</b> ${escHtml(p.panjang_km || "N/A")} km<br/>
+              <b>UPTD:</b> <span style="color:${color};font-weight:700;">${escHtml(p.unit_kerja_kode || "N/A")}</span><br/>
+              <b>Lokasi:</b> ${escHtml(p.lokasi_kode || "N/A")}
             </div>`)
             .addTo(map);
         }, 900);
