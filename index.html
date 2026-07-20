@@ -1029,7 +1029,7 @@
         if (hasPlaces) {
           html += `<div class="search-section-header">📍 Places</div>`;
           html += data.map((r, i) => `
-            <div class="search-item" data-nom="${i}">
+            <div class="search-item" data-nom="${i}" data-osm-type="${r.osm_type}" data-osm-id="${r.osm_id}">
               <div class="s-name">${escHtml(r.display_name.split(",")[0])}</div>
               <div class="s-meta">${escHtml(r.display_name.split(",").slice(1).join(",").trim())}</div>
             </div>
@@ -1063,7 +1063,51 @@
     return d.innerHTML;
   }
 
-  searchDropdown.addEventListener("click", (e) => {
+  // ─── OSM GEOMETRY HIGHLIGHT ───────────────────────────────
+  function clearHighlight() {
+    ["hl-fill","hl-line","hl-glow"].forEach(id => {
+      if (map.getLayer(id)) map.removeLayer(id);
+    });
+    if (map.getSource("hl")) map.removeSource("hl");
+  }
+
+  async function highlightOSM(osmType, osmId) {
+    clearHighlight();
+    try {
+      const q = `[out:json];${osmType}(${osmId});out geom;`;
+      const resp = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(q)}`);
+      const data = await resp.json();
+      const el = data?.elements?.[0];
+      if (!el || !el.geometry || el.geometry.length < 2) return null;
+
+      const coords = el.geometry.map(p => [parseFloat(p.lon), parseFloat(p.lat)]);
+      const isClosed = coords.length >= 3 &&
+        coords[0][0] === coords[coords.length-1][0] &&
+        coords[0][1] === coords[coords.length-1][1];
+
+      const geojson = isClosed
+        ? { type: "Feature", geometry: { type: "Polygon", coordinates: [coords] } }
+        : { type: "Feature", geometry: { type: "LineString", coordinates: coords } };
+
+      map.addSource("hl", { type: "geojson", data: geojson });
+
+      if (isClosed) {
+        map.addLayer({ id: "hl-fill", type: "fill", source: "hl",
+          paint: { "fill-color": "#00e5ff", "fill-opacity": 0.12, "fill-outline-color": "#00e5ff" } });
+      }
+      map.addLayer({ id: "hl-glow", type: "line", source: "hl",
+        paint: { "line-color": "#00e5ff", "line-width": isClosed ? 4 : 10, "line-opacity": 0.2 } });
+      map.addLayer({ id: "hl-line", type: "line", source: "hl",
+        paint: { "line-color": "#00e5ff", "line-width": isClosed ? 2 : 5, "line-opacity": 0.9 } });
+
+      return geojson;
+    } catch (e) {
+      console.warn("Overpass:", e.message);
+      return null;
+    }
+  }
+
+  searchDropdown.addEventListener("click", async (e) => {
     const item = e.target.closest(".search-item");
     if (!item) return;
 
@@ -1073,34 +1117,40 @@
       const lng = parseFloat(item.dataset.lng);
       placeCoordMarker(lng, lat);
     } else if (item.dataset.nom !== undefined) {
-      // Nominatim result — single marker + popup, no double popup
+      // Nominatim result — fetch real OSM geometry from Overpass
       const r = searchDropdown._nomResults[parseInt(item.dataset.nom)];
       if (r) {
         const lng = parseFloat(r.lon);
         const lat = parseFloat(r.lat);
 
-        // Remove previous marker
+        // Remove previous marker & highlight
         if (coordMarker) coordMarker.remove();
-        const el = document.createElement("div");
-        el.className = "coord-marker";
-        coordMarker = new maplibregl.Marker({ element: el })
-          .setLngLat([lng, lat])
-          .addTo(map);
-
-        // Fit to region bounding box if available, otherwise fly to point
-        const bbox = r.boundingbox;
-        if (bbox && bbox.length === 4) {
-          const bounds = new maplibregl.LngLatBounds(
-            [parseFloat(bbox[3]), parseFloat(bbox[0])],
-            [parseFloat(bbox[2]), parseFloat(bbox[1])]
-          );
-          map.fitBounds(bounds, { padding: 40, maxZoom: 14, duration: 1000 });
-        } else {
-          map.flyTo({ center: [lng, lat], zoom: 15, duration: 1000 });
-        }
-
-        // Deselect any previously highlighted road
         deselectRoad();
+        clearHighlight();
+
+        // Fetch & render OSM geometry
+        const osmType = r.osm_type;        // "way", "relation", "node"
+        const osmId   = r.osm_id;
+        const geojson = await highlightOSM(osmType, osmId);
+
+        if (geojson) {
+          // Fit to actual geometry bounds
+          const flat = geojson.geometry.coordinates.flat(2);
+          const b = new maplibregl.LngLatBounds();
+          for (let i = 0; i < flat.length; i += 2) b.extend([flat[i], flat[i+1]]);
+          map.fitBounds(b, { padding: 40, maxZoom: 16, duration: 1000 });
+        } else {
+          // Fallback: bounding box or point
+          const bbox = r.boundingbox;
+          if (bbox && bbox.length === 4) {
+            map.fitBounds(new maplibregl.LngLatBounds(
+              [parseFloat(bbox[3]), parseFloat(bbox[0])],
+              [parseFloat(bbox[2]), parseFloat(bbox[1])]
+            ), { padding: 40, maxZoom: 14, duration: 1000 });
+          } else {
+            map.flyTo({ center: [lng, lat], zoom: 15, duration: 1000 });
+          }
+        }
 
         setTimeout(() => {
           new maplibregl.Popup({ maxWidth: "320px" })
