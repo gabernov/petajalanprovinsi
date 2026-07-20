@@ -1063,47 +1063,41 @@
     return d.innerHTML;
   }
 
-  // ─── OSM GEOMETRY HIGHLIGHT ───────────────────────────────
-  let highlightAbort = null;
-
+  // ─── HIGHLIGHT BOUNDING BOX ──────────────────────────────
   function clearHighlight() {
-    ["hl-fill","hl-line","hl-glow"].forEach(id => {
+    ["hl-fill","hl-outline"].forEach(id => {
       if (map.getLayer(id)) map.removeLayer(id);
     });
     if (map.getSource("hl")) map.removeSource("hl");
   }
 
-  function highlightOSM(osmType, osmId) {
-    // Cancel previous request
-    if (highlightAbort) { highlightAbort.abort(); highlightAbort = null; }
-    highlightAbort = new AbortController();
-    const signal = highlightAbort.signal;
+  function highlightBounds(bbox) {
+    clearHighlight();
+    if (!bbox || bbox.length !== 4) return;
+    const sw = [parseFloat(bbox[3]), parseFloat(bbox[0])];
+    const ne = [parseFloat(bbox[2]), parseFloat(bbox[1])];
+    if (isNaN(sw[0]) || isNaN(sw[1]) || isNaN(ne[0]) || isNaN(ne[1])) return;
 
-    // Only Overpass for ways (roads); relations just use bounding box
-    if (osmType !== "way") return Promise.resolve(null);
+    const geojson = {
+      type: "Feature",
+      geometry: {
+        type: "Polygon",
+        coordinates: [[
+          [sw[0], sw[1]],
+          [ne[0], sw[1]],
+          [ne[0], ne[1]],
+          [sw[0], ne[1]],
+          [sw[0], sw[1]]
+        ]]
+      }
+    };
 
-    return fetch(
-      `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(`[out:json];way(${osmId});out geom;`)}`,
-      { signal }
-    ).then(r => r.json()).then(data => {
-      if (signal.aborted) return null;
-      const el = data?.elements?.[0];
-      if (!el || el.type !== "way" || !el.geometry || el.geometry.length < 2) return null;
-
-      const coords = el.geometry.map(p => [parseFloat(p.lon), parseFloat(p.lat)]);
-      const geojson = { type: "Feature", geometry: { type: "LineString", coordinates: coords } };
-
-      map.addSource("hl", { type: "geojson", data: geojson });
-      map.addLayer({ id: "hl-glow", type: "line", source: "hl",
-        paint: { "line-color": "#00e5ff", "line-width": 10, "line-opacity": 0.2 } });
-      map.addLayer({ id: "hl-line", type: "line", source: "hl",
-        paint: { "line-color": "#00e5ff", "line-width": 4, "line-opacity": 0.9 } });
-
-      return geojson;
-    }).catch(e => {
-      if (e.name !== "AbortError") console.warn("Overpass:", e.message);
-      return null;
-    });
+    map.addSource("hl", { type: "geojson", data: geojson });
+    map.addLayer({ id: "hl-fill", type: "fill", source: "hl",
+      paint: { "fill-color": "#00e5ff", "fill-opacity": 0.08 } });
+    map.addLayer({ id: "hl-outline", type: "line", source: "hl",
+      paint: { "line-color": "#00e5ff", "line-width": 2, "line-opacity": 0.7,
+               "line-dasharray": [3, 3] } });
   }
 
   searchDropdown.addEventListener("click", (e) => {
@@ -1127,9 +1121,10 @@
         deselectRoad();
         clearHighlight();
 
-        // 1. IMMEDIATE: zoom to Nominatim bounding box
+        // Zoom to Nominatim bounding box
         const bbox = r.boundingbox;
         if (bbox && bbox.length === 4) {
+          highlightBounds(bbox);
           map.fitBounds(new maplibregl.LngLatBounds(
             [parseFloat(bbox[3]), parseFloat(bbox[0])],
             [parseFloat(bbox[2]), parseFloat(bbox[1])]
@@ -1138,16 +1133,7 @@
           map.flyTo({ center: [lng, lat], zoom: 15, duration: 1000 });
         }
 
-        // 2. ASYNC: fetch OSM geometry and overlay highlight
-        highlightOSM(r.osm_type, r.osm_id).then(geojson => {
-          if (!geojson) return;
-          const flat = geojson.geometry.coordinates.flat(2);
-          const b = new maplibregl.LngLatBounds();
-          for (let i = 0; i < flat.length; i += 2) b.extend([flat[i], flat[i+1]]);
-          map.fitBounds(b, { padding: 40, maxZoom: 16, duration: 800 });
-        });
-
-        // 3. Popup
+        // Popup
         setTimeout(() => {
           new maplibregl.Popup({ maxWidth: "320px" })
             .setLngLat([lng, lat])
