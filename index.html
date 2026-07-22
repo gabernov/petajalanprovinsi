@@ -705,7 +705,8 @@
     const starfield = new MaplibreStarfieldLayer({
       starCount: 4000,
       starSize: 1.6,
-      galaxyBrightness: 0.4,
+      galaxyBrightness: 0.3,
+      galaxyTextureUrl: "milkyway.jpg",
     });
     map.addLayer(starfield, firstLayerId);
     // Re-apply globe projection — the layer add can reset style state
