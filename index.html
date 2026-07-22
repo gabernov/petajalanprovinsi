@@ -12,12 +12,14 @@
     body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #0f172a; }
     #map { position: absolute; top: 0; bottom: 0; width: 100%; }
 
-    /* Loading overlay */
+    /* Loading overlay — scoped to the map area so the UI is visible immediately */
     #loading {
-      position: fixed; inset: 0; z-index: 2000;
-      background: rgba(15, 23, 42, 0.95);
+      position: absolute; inset: 0; z-index: 5;
+      background: rgba(15, 23, 42, 0.85);
       display: flex; flex-direction: column; justify-content: center; align-items: center;
       color: #e2e8f0; font-size: 14px;
+      backdrop-filter: blur(2px);
+      pointer-events: none; /* let UI interactions through while loading */
     }
     #loading.hidden { display: none; }
     #loading .spinner {
@@ -329,14 +331,14 @@
 </head>
 <body>
 
-<div id="loading">
-  <div class="spinner"></div>
-  <div>Loading WASM modules...</div>
-  <div class="status" id="load-status"></div>
-  <div class="error" id="load-error"></div>
+<div id="map">
+  <div id="loading">
+    <div class="spinner"></div>
+    <div>Loading WASM modules...</div>
+    <div class="status" id="load-status"></div>
+    <div class="error" id="load-error"></div>
+  </div>
 </div>
-
-<div id="map"></div>
 
 <div id="search-bar">
   <div id="search-box">
@@ -430,6 +432,12 @@
   const $ = id => document.getElementById(id);
   const loadStatus = $("load-status");
   const loadError = $("load-error");
+
+  // Import starfield layer for globe 3D background
+  loadStatus.textContent = "Loading starfield...";
+  const { MaplibreStarfieldLayer } = await import(
+    "https://esm.sh/jsr/@geoql/maplibre-gl-starfield@0.1.1"
+  );
 
   loadStatus.textContent = "Loading Apache Arrow from esm.sh...";
   let arrow;
@@ -674,11 +682,25 @@
   const map = new maplibregl.Map({
     container: "map",
     style: "https://tiles.openfreemap.org/styles/liberty",
-    center: [107.6, -6.9],
-    zoom: 9,
+    center: [0, 0],
+    zoom: 0,
+    pitch: 0,
+    projection: "globe",
   });
   map.addControl(new maplibregl.NavigationControl(), "bottom-right");
   map.addControl(new maplibregl.ScaleControl({ maxWidth: 200 }), "bottom-left");
+
+  // Starfield layer — shown behind everything for a space-like 3D globe
+  function addStarfield() {
+    if (!map.getStyle) return;
+    const firstLayerId = map.getStyle().layers?.[0]?.id;
+    const starfield = new MaplibreStarfieldLayer({
+      starCount: 4000,
+      starSize: 1.6,
+      galaxyBrightness: 0.4,
+    });
+    map.addLayer(starfield, firstLayerId);
+  }
 
   let roadsGeoJSON = null;
   let activeFilters = new Set();
@@ -1277,6 +1299,8 @@
     });
 
     const onStyleLoaded = () => {
+      // Re-add starfield (it gets removed when the style changes)
+      addStarfield();
       if (roadsGeoJSON && !map.getSource("roads")) {
         addRoadsLayer(true);
       }
@@ -1332,6 +1356,10 @@
 
   // Auto-load from server
   map.on("load", async () => {
+    // Add starfield immediately so the user sees a 3D globe with stars
+    // while the data is loading.
+    addStarfield();
+
     try {
       const roadsResp = await fetch("ruas_jalan.parquet");
       if (roadsResp.ok) {
@@ -1353,7 +1381,17 @@
           console.log("Calling updateStats after delay...");
           updateStats();
         }, 500);
-        fitBounds();
+
+        // Fly from globe view to the data location with a long,
+        // dramatic animation. This is the "intro" effect.
+        const b = new maplibregl.LngLatBounds();
+        for (const f of roadsGeoJSON.features) {
+          const flat = f.geometry.coordinates.flat(2);
+          for (let i = 0; i < flat.length; i += 2) b.extend([flat[i], flat[i+1]]);
+        }
+        if (!b.isEmpty()) {
+          map.fitBounds(b, { padding: 60, maxZoom: 11, duration: 4500, essential: true });
+        }
       }
     } catch (e) {
       console.log("Auto-load error:", e.message, e.stack);
