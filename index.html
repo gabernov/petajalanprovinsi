@@ -686,6 +686,8 @@
     zoom: 0,
     pitch: 0,
   });
+  // Expose for debugging/testing
+  window.__map = map;
   // Force globe projection once the style is loaded (setProjection
   // requires the style to be done loading).
   map.once("load", () => map.setProjection({ type: "globe" }));
