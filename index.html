@@ -686,8 +686,6 @@
     zoom: 0,
     pitch: 0,
   });
-  // Expose for debugging/testing
-  window.__map = map;
   // Force globe projection once the style is loaded (setProjection
   // requires the style to be done loading).
   map.once("load", () => map.setProjection({ type: "globe" }));
@@ -1398,7 +1396,12 @@
           for (let i = 0; i < flat.length; i += 2) b.extend([flat[i], flat[i+1]]);
         }
         if (!b.isEmpty()) {
-          map.fitBounds(b, { padding: 60, maxZoom: 11, duration: 4500, essential: true });
+          // Brief pause so the user can appreciate the globe + stars
+          // before the fly kicks in (especially on fast connections
+          // where data loads almost instantly).
+          setTimeout(() => {
+            map.fitBounds(b, { padding: 60, maxZoom: 11, duration: 4500, essential: true });
+          }, 1500);
         }
       }
     } catch (e) {
