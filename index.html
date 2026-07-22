@@ -686,15 +686,21 @@
     zoom: 0,
     pitch: 0,
   });
-  // Force globe projection once the style is loaded (setProjection
-  // requires the style to be done loading).
-  map.once("load", () => map.setProjection({ type: "globe" }));
   map.addControl(new maplibregl.NavigationControl(), "bottom-right");
   map.addControl(new maplibregl.ScaleControl({ maxWidth: 200 }), "bottom-left");
+
+  // Set globe projection as soon as the style is loaded — this fires
+  // before the first render frame, eliminating the "flat -> globe" flash.
+  map.on("style.load", () => {
+    map.setProjection({ type: "globe" });
+  });
 
   // Starfield layer — shown behind everything for a space-like 3D globe
   function addStarfield() {
     if (!map.getStyle) return;
+    // Set globe projection BEFORE adding the layer so there's no render
+    // frame with Mercator projection between the two operations.
+    map.setProjection({ type: "globe" });
     const firstLayerId = map.getStyle().layers?.[0]?.id;
     const starfield = new MaplibreStarfieldLayer({
       starCount: 4000,
@@ -1304,8 +1310,7 @@
 
     const onStyleLoaded = () => {
       // Re-add starfield and re-apply globe projection (both get reset
-      // when the style changes)
-      map.setProjection({ type: "globe" });
+      // when the style changes). addStarfield() now sets projection first.
       addStarfield();
       if (roadsGeoJSON && !map.getSource("roads")) {
         addRoadsLayer(true);
@@ -1356,15 +1361,17 @@
   });
 
   // ─── INIT DONE ────────────────────────────────────────────
-  $("loading").classList.add("hidden");
-  loadStatus.textContent = "";
   console.log("All dependencies loaded. Ready for data.");
 
   // Auto-load from server
   map.on("load", async () => {
-    // Add starfield immediately so the user sees a 3D globe with stars
-    // while the data is loading.
+    // Add starfield and re-apply globe immediately — the style is now
+    // loaded so the globe renders on the very first frame the user sees.
     addStarfield();
+
+    // Hide the loading overlay NOW, after globe projection is active.
+    $("loading").classList.add("hidden");
+    loadStatus.textContent = "";
 
     try {
       const roadsResp = await fetch("ruas_jalan.parquet");
